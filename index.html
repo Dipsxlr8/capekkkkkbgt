@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Uji Coba Full Tracker (Kamera Asli + Smart Gesture)</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #1a1a1a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* --- RASIO DAN LAYOUT LAMA KAMU (TIDAK DIUBAH) --- */
+        .container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+        }
+
+        #input_video {
+            display: none;
+        }
+
+        #output_canvas {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
+        }
+
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-family: sans-serif;
+            font-size: 24px;
+            z-index: 10;
+            background: rgba(0,0,0,0.8);
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .status {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-family: sans-serif;
+            font-size: 14px;
+            z-index: 10;
+            background: rgba(0,0,0,0.7);
+            padding: 10px;
+            border-radius: 5px;
+        }
+
+        .error {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #ff4444;
+            font-family: sans-serif;
+            font-size: 18px;
+            z-index: 10;
+            background: rgba(0,0,0,0.9);
+            padding: 20px;
+            border-radius: 10px;
+            display: none;
+        }
+
+        /* --- KOTAK GESTURE BARU (Opacity 30%, Kanan Atas) --- */
+        .gesture-box {
+            position: absolute;
+            top: 25px;
+            right: 25px;
+            background-color: rgba(220, 20, 60, 0.3); /* Merah 30% Opacity */
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            padding: 15px 20px;
+            border-radius: 12px;
+            text-align: center;
+            z-index: 100;
+            display: none; /* Disembunyikan secara default */
+            flex-direction: column;
+            align-items: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            font-family: sans-serif;
+        }
+
+        .gesture-output {
+            font-size: 20px;
+            font-weight: bold;
+            color: #ffffff;
+            line-height: 1.4;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+        }
+    </style>
+
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/holistic/holistic.js" crossorigin="anonymous"></script>
+</head>
+<body>
+
+    <div class="loading" id="loadingText">
+        🔄 Follow ig gw dips_aja.<br>
+        <small style="font-size: 14px; color: #aaa;">tunggu 5-10 detik</small>
+    </div>
+
+    <div class="status" id="statusText">
+        📊 Status: Menunggu kamera...
+    </div>
+
+    <div class="gesture-box" id="gestureBox">
+        <div class="gesture-output" id="gestureOutput"></div>
+    </div>
+
+    <div class="error" id="errorText"></div>
+
+    <div class="container">
+        <video id="input_video" playsinline></video>
+        <canvas id="output_canvas"></canvas>
+    </div>
+
+    <script>
+        const videoElement = document.getElementById('input_video');
+        const canvasElement = document.getElementById('output_canvas');
+        const canvasCtx = canvasElement.getContext('2d');
+        const loadingText = document.getElementById('loadingText');
+        const statusText = document.getElementById('statusText');
+        const errorText = document.getElementById('errorText');
+        const gestureBox = document.getElementById('gestureBox');
+        const gestureOutput = document.getElementById('gestureOutput');
+
+        let frameCount = 0;
+
+        function showError(message) {
+            errorText.style.display = 'block';
+            errorText.innerHTML = `❌ ${message}`;
+            loadingText.style.display = 'none';
+        }
+
+        function updateStatus(message) {
+            statusText.innerHTML = `📊 Status: ${message}`;
+        }
+
+        // --- PENDETEKSI GESTURE TANGAN ---
+        function detectHandGesture(landmarks) {
+            if (!landmarks) return null;
+
+            const thumbTip = landmarks[4];
+            const indexTip = landmarks[8];
+            const wrist = landmarks[0];
+
+            const isIndexOpen = landmarks[8].y < landmarks[6].y;
+            const isMiddleOpen = landmarks[12].y < landmarks[10].y;
+            const isRingOpen = landmarks[16].y < landmarks[14].y;
+            const isPinkyOpen = landmarks[20].y < landmarks[18].y;
+
+            const thumbIndexDist = Math.hypot(thumbTip.x - indexTip.x, thumbTip.y - indexTip.y);
+
+            const isThumbUp = thumbTip.y < landmarks[2].y && thumbTip.y < wrist.y && !isIndexOpen && !isMiddleOpen && !isRingOpen && !isPinkyOpen;
+            const isThumbDown = thumbTip.y > landmarks[2].y && thumbTip.y > wrist.y && !isIndexOpen && !isMiddleOpen && !isRingOpen && !isPinkyOpen;
+
+            if (thumbIndexDist < 0.05 && !isMiddleOpen && !isRingOpen && !isPinkyOpen) return "Saranghaeyo<br>🫰";
+            if (thumbIndexDist < 0.05 && isMiddleOpen && isRingOpen && isPinkyOpen) return "OK Sign<br>👌";
+            if (isThumbUp) return "Mantap<br>👍";
+            if (isThumbDown) return "Dislike<br>👎";
+            if (isIndexOpen && !isMiddleOpen && !isRingOpen && !isPinkyOpen && thumbTip.y > landmarks[3].y) return "Telunjuk<br>☝️";
+            if (isIndexOpen && !isMiddleOpen && !isRingOpen && !isPinkyOpen && thumbTip.y < landmarks[3].y) return "Pistol<br>🔫";
+            if (!isIndexOpen && !isMiddleOpen && !isRingOpen && isPinkyOpen) return "Janji<br>🤙";
+            if (isIndexOpen && isMiddleOpen && !isRingOpen && !isPinkyOpen) return "Peace<br>✌️";
+            if (isIndexOpen && !isMiddleOpen && !isRingOpen && isPinkyOpen) return "Metal<br>🤘";
+            if (!isIndexOpen && isMiddleOpen && !isRingOpen && !isPinkyOpen) return "Jari Tengah<br>🖕";
+            if (!isIndexOpen && !isMiddleOpen && !isRingOpen && !isPinkyOpen) return "Mengepal<br>✊";
+            if (isIndexOpen && isMiddleOpen && isRingOpen && isPinkyOpen) return "Terbuka<br>🖐️";
+
+            return null;
+        }
+
+        // --- PENDETEKSI GESTURE BADAN ---
+        function detectBodyGesture(poseLandmarks) {
+            if (!poseLandmarks) return null;
+            const leftWrist = poseLandmarks[15];
+            const rightWrist = poseLandmarks[16];
+            const leftShoulder = poseLandmarks[11];
+            const rightShoulder = poseLandmarks[12];
+            const leftEar = poseLandmarks[7];
+            const rightEar = poseLandmarks[8];
+
+            if (leftWrist.visibility > 0.5 && rightWrist.visibility > 0.5) {
+                if (leftWrist.x < rightWrist.x && leftWrist.y > leftShoulder.y && rightWrist.y > rightShoulder.y) {
+                    return "Menyilang<br>🙅";
+                }
+                if (leftWrist.y < leftShoulder.y && Math.abs(leftWrist.y - leftEar.y) < 0.15 &&
+                    rightWrist.y < rightShoulder.y && Math.abs(rightWrist.y - rightEar.y) < 0.15) {
+                    return "Pegang Kepala<br>🙆";
+                }
+            }
+            return null;
+        }
+
+        // --- PROSES AI ---
+        function onResults(results) {
+            frameCount++;
+            
+            if (frameCount > 10) {
+                loadingText.style.display = 'none';
+            }
+            
+            // Menggunakan resolusi dari kamera
+            canvasElement.width = videoElement.videoWidth;
+            canvasElement.height = videoElement.videoHeight;
+            
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+            let detected = [];
+            let faceCount = 0;
+            let handCount = 0;
+
+            // 1. Gambar & Track Wajah
+            if (results.faceLandmarks) {
+                faceCount = 1;
+                drawConnectors(canvasCtx, results.faceLandmarks, FACEMESH_CONTOURS, {color: '#EEEEEE60', lineWidth: 1});
+            }
+
+            // 2. Gambar & Track Tangan Kiri
+            if (results.leftHandLandmarks) {
+                handCount++;
+                drawConnectors(canvasCtx, results.leftHandLandmarks, HAND_CONNECTIONS, {color: '#FF0000', lineWidth: 5});
+                drawLandmarks(canvasCtx, results.leftHandLandmarks, {color: '#FF0000', lineWidth: 2, radius: 4});
+                const g = detectHandGesture(results.leftHandLandmarks);
+                if(g) detected.push(g);
+            }
+
+            // 3. Gambar & Track Tangan Kanan
+            if (results.rightHandLandmarks) {
+                handCount++;
+                drawConnectors(canvasCtx, results.rightHandLandmarks, HAND_CONNECTIONS, {color: '#FF0000', lineWidth: 5});
+                drawLandmarks(canvasCtx, results.rightHandLandmarks, {color: '#FF0000', lineWidth: 2, radius: 4});
+                const g = detectHandGesture(results.rightHandLandmarks);
+                if(g) detected.push(g);
+            }
+
+            // 4. Gambar & Track Badan (Pose)
+            if (results.poseLandmarks) {
+                const leftShoulderVis = results.poseLandmarks[11].visibility;
+                const rightShoulderVis = results.poseLandmarks[12].visibility;
+                
+                if (leftShoulderVis > 0.4 || rightShoulderVis > 0.4) {
+                    drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS, {color: '#00FFCC', lineWidth: 4});
+                    drawLandmarks(canvasCtx, results.poseLandmarks, {color: '#FF3366', lineWidth: 2, radius: 3});
+                    
+                    const bodyG = detectBodyGesture(results.poseLandmarks);
+                    if (bodyG) detected.push(bodyG);
+                }
+            }
+
+            // Update Status Top Kiri (Seperti Kodemu)
+            updateStatus(`👤 Wajah: ${faceCount} | ✋ Tangan: ${handCount} | 🎬 Frame: ${frameCount}`);
+
+            // Tampilkan Kotak Gesture (Kanan Atas) Jika Ada
+            if (detected.length > 0) {
+                gestureBox.style.display = 'flex';
+                // Buang duplikat jika dua tangan melakukan gaya yang sama
+                const uniqueGestures = [...new Set(detected)];
+                gestureOutput.innerHTML = uniqueGestures.join('<br><br>'); 
+            } else {
+                gestureBox.style.display = 'none';
+                gestureOutput.innerHTML = "";
+            }
+            
+            canvasCtx.restore();
+        }
+
+        // --- INISIALISASI MEDIAPIPE HOLISTIC ---
+        const holistic = new Holistic({locateFile: (file) => {
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${file}`;
+        }});
+
+        holistic.setOptions({
+            modelComplexity: 0, // Mode Ringan
+            smoothLandmarks: true,
+            enableSegmentation: false,
+            refineFaceLandmarks: false,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+
+        holistic.onResults(onResults);
+
+        // --- SETUP KAMERA (Murni Dari Kode Lama Kamu) ---
+        const camera = new Camera(videoElement, {
+            onFrame: async () => {
+                try {
+                    await holistic.send({image: videoElement});
+                } catch (error) {
+                    console.error('Error sending frame:', error);
+                }
+            },
+            width: 1280, // Resolusi tidak dirubah!
+            height: 720,
+            facingMode: 'user'
+        });
+
+        // --- START CAMERA ---
+        camera.start()
+            .then(() => {
+                console.log('✅ Camera started successfully');
+                updateStatus('📷 Kamera aktif - Hadapkan badan/tangan ke kamera');
+            })
+            .catch(error => {
+                console.error('❌ Camera start error:', error);
+                showError('Gagal mengakses kamera!<br><br>1. Pastikan izin kamera diberikan<br>2. Coba browser lain (Chrome/Edge)<br>3. Pastikan tidak ada aplikasi lain yang menggunakan kamera');
+            });
+    </script>
+</body>
+</html>
