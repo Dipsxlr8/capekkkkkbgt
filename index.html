@@ -200,11 +200,11 @@
 
             if (leftWrist.visibility > 0.5 && rightWrist.visibility > 0.5) {
                 if (leftWrist.x < rightWrist.x && leftWrist.y > leftShoulder.y && rightWrist.y > rightShoulder.y) {
-                    return "Menyilang<br>🙅";
+                    return "Gokil<br>🙅";
                 }
                 if (leftWrist.y < leftShoulder.y && Math.abs(leftWrist.y - leftEar.y) < 0.15 &&
                     rightWrist.y < rightShoulder.y && Math.abs(rightWrist.y - rightEar.y) < 0.15) {
-                    return "Pegang Kepala<br>🙆";
+                    return "Waduh<br>🙆";
                 }
             }
             return null;
